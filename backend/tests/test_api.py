@@ -198,3 +198,19 @@ def test_gemini_json_response(monkeypatch):
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.setattr(ai_service, "get_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
     assert ai_service.ask_json("JSON", "Topics") == {"topics": []}
+
+
+def test_transient_gemini_failure_retries(monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    class Unavailable(Exception):
+        status_code = 503
+    def create(**kwargs):
+        calls.append(1)
+        if len(calls) < 3:
+            raise Unavailable()
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))])
+    monkeypatch.setattr(ai_service.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(ai_service, "get_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    assert ai_service.ask_json("JSON", "Test") == {"ok": True}
+    assert len(calls) == 3

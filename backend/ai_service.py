@@ -2,6 +2,7 @@ import json
 import os
 import random
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -90,22 +91,36 @@ def ask_json(system: str, user: str) -> dict:
     model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.4,
-        )
+        for attempt in range(3):
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.4,
+                )
+                break
+            except Exception as error:
+                if getattr(error, "status_code", None) not in {500, 502, 503, 504} or attempt == 2:
+                    raise
+                time.sleep(attempt + 1)
         data = json.loads(response.choices[0].message.content or "{}")
     except json.JSONDecodeError:
         raise AIError("Модель вернула некорректный JSON. Попробуй ещё раз.")
     except Exception as error:
         if getattr(error, "status_code", None) == 429:
             raise AIError("Лимит Gemini исчерпан. Попробуй позже или проверь бесплатную квоту в Google AI Studio.")
-        raise AIError("Ошибка Gemini. Проверь ключ и доступность модели в Google AI Studio.") from error
+        status = getattr(error, "status_code", None)
+        if status in {500, 502, 503, 504}:
+            raise AIError("Gemini временно недоступен. Попробуй повторить генерацию позже.") from error
+        if status in {401, 403}:
+            raise AIError("Gemini отклонил доступ. Проверь ключ и разрешения проекта Google AI Studio.") from error
+        if status == 404:
+            raise AIError("Выбранная модель Gemini недоступна для этого проекта.") from error
+        raise AIError(f"Не удалось выполнить запрос Gemini (HTTP {status or 'нет ответа'}). Попробуй ещё раз.") from error
 
     if not isinstance(data, dict):
         raise AIError("Модель вернула неожиданный формат ответа.")
