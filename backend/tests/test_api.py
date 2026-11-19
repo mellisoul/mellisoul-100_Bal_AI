@@ -125,16 +125,16 @@ def test_edit_delete_question(client):
 
 def test_no_api_key_returns_503(client, monkeypatch):
     def broken(system, user):
-        raise ai_service.AIConfigError("Не задан OPENAI_API_KEY.")
+        raise ai_service.AIConfigError("Не задан GEMINI_API_KEY.")
 
     monkeypatch.setattr(ai_service, "ask_json", broken)
     mid = upload(client)
     r = client.post(f"/api/materials/{mid}/topics")
-    assert r.status_code == 503 and "OPENAI_API_KEY" in r.json()["detail"]
+    assert r.status_code == 503 and "GEMINI_API_KEY" in r.json()["detail"]
 
 
 def test_get_client_requires_key(monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ai_service.AIConfigError):
         ai_service.get_client()
 
@@ -150,7 +150,7 @@ def test_stats_and_results(client):
 
 def test_text_pdf_upload_without_ai_key(client, monkeypatch):
     import fitz
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with fitz.open() as document:
         page = document.new_page()
         page.insert_text((72, 72), "Photosynthesis converts light into chemical energy.")
@@ -171,3 +171,30 @@ def test_pdf_without_text_has_clear_error(client):
     response = client.post("/api/materials", files={"file": ("scan.pdf", pdf, "application/pdf")})
     assert response.status_code == 400
     assert "скан" in response.json()["detail"]
+
+
+def test_only_google_client_is_configured(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-google-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-use")
+    with ai_service.get_client() as client:
+        assert client.api_key == "test-google-key"
+        assert str(client.base_url) == "https://generativelanguage.googleapis.com/v1beta/openai/"
+        assert client.max_retries == 0
+
+
+def test_no_fallback_to_openai(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "old-key")
+    with pytest.raises(ai_service.AIConfigError, match="GEMINI_API_KEY"):
+        ai_service.get_client()
+
+
+def test_gemini_json_response(monkeypatch):
+    from types import SimpleNamespace
+    def create(**kwargs):
+        assert kwargs["model"] == "gemini-3.5-flash-lite"
+        assert kwargs["response_format"] == {"type": "json_object"}
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"topics": []}'))])
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.setattr(ai_service, "get_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    assert ai_service.ask_json("JSON", "Topics") == {"topics": []}

@@ -71,22 +71,23 @@ class AIError(Exception):
 
 
 def get_client():
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
         raise AIConfigError(
-            "Не задан OPENAI_API_KEY. Создай файл backend/.env со строкой "
-            "OPENAI_API_KEY=твой_ключ и перезапусти сервер."
+            "Не задан GEMINI_API_KEY. Создай файл backend/.env со строкой "
+            "GEMINI_API_KEY=твой_ключ и перезапусти сервер."
         )
 
     from openai import OpenAI
 
-    return OpenAI(api_key=api_key, timeout=120)
+    return OpenAI(api_key=api_key, timeout=120, max_retries=0,
+                  base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
 
 
 def ask_json(system: str, user: str) -> dict:
     client = get_client()
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
     try:
         response = client.chat.completions.create(
@@ -102,7 +103,9 @@ def ask_json(system: str, user: str) -> dict:
     except json.JSONDecodeError:
         raise AIError("Модель вернула некорректный JSON. Попробуй ещё раз.")
     except Exception as error:
-        raise AIError(f"Ошибка обращения к OpenAI: {error}")
+        if getattr(error, "status_code", None) == 429:
+            raise AIError("Лимит Gemini исчерпан. Попробуй позже или проверь бесплатную квоту в Google AI Studio.")
+        raise AIError("Ошибка Gemini. Проверь ключ и доступность модели в Google AI Studio.") from error
 
     if not isinstance(data, dict):
         raise AIError("Модель вернула неожиданный формат ответа.")
