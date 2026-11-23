@@ -1,10 +1,13 @@
 import json
+import os
 import re
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import fitz
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -51,6 +54,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+AI_LIMIT_PER_HOUR = int(os.getenv("AI_LIMIT_PER_HOUR", "40"))
+ai_calls: dict[str, deque] = defaultdict(deque)
+
+
+def limit_ai_calls(request: Request):
+    forwarded = request.headers.get("x-forwarded-for", "")
+    client = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    now = time.time()
+    calls = ai_calls[client]
+
+    while calls and now - calls[0] > 3600:
+        calls.popleft()
+
+    if len(calls) >= AI_LIMIT_PER_HOUR:
+        raise HTTPException(
+            status_code=429,
+            detail="Слишком много запросов к AI за час. Попробуй немного позже.",
+        )
+
+    calls.append(now)
 
 
 def clean_filename(filename: str) -> str:
@@ -261,7 +286,7 @@ def delete_material(material_id: int):
     return {"message": "Материал удалён."}
 
 
-@app.post("/api/materials/{material_id}/topics")
+@app.post("/api/materials/{material_id}/topics", dependencies=[Depends(limit_ai_calls)])
 def detect_topics(material_id: int):
     with get_connection() as conn:
         row = get_material_or_404(conn, material_id)
@@ -288,7 +313,7 @@ def list_topics(material_id: int):
     }
 
 
-@app.post("/api/materials/{material_id}/generate")
+@app.post("/api/materials/{material_id}/generate", dependencies=[Depends(limit_ai_calls)])
 def generate_material_questions(material_id: int, request: GenerateRequest):
     topic = request.topic.strip()
 
