@@ -115,6 +115,7 @@ def ask_json(system: str, user: str) -> dict:
     client = get_client()
     last_error: Exception | None = None
     response = None
+    seen_statuses: list = []
 
     for model in model_chain():
         for attempt in range(3):
@@ -124,6 +125,7 @@ def ask_json(system: str, user: str) -> dict:
             except Exception as error:
                 last_error = error
                 status = getattr(error, "status_code", None)
+                seen_statuses.append(status)
                 logger.warning("Gemini %s attempt %s failed: HTTP %s %s", model, attempt + 1, status, error)
 
                 if status not in RETRY_STATUSES or attempt == 2:
@@ -138,16 +140,17 @@ def ask_json(system: str, user: str) -> dict:
             break
 
     if response is None:
-        status = getattr(last_error, "status_code", None)
+        statuses = set(seen_statuses)
 
-        if status == 429:
-            raise AIError("Лимит Gemini исчерпан. Подожди минуту и попробуй снова или проверь квоту в Google AI Studio.")
-        if status in {500, 502, 503, 504}:
+        if 429 in statuses:
+            raise AIError("Лимит бесплатного ключа Gemini исчерпан. Подожди 1–2 минуты и попробуй снова; если не помогает — дневная квота закончилась, она обновится завтра.")
+        if statuses & {500, 502, 503, 504}:
             raise AIError("Gemini сейчас перегружен. Подожди минуту и попробуй ещё раз.")
-        if status in {401, 403}:
+        if statuses & {401, 403}:
             raise AIError("Gemini отклонил доступ. Проверь ключ и разрешения проекта Google AI Studio.")
-        if status == 404:
+        if statuses == {404}:
             raise AIError("Выбранная модель Gemini недоступна для этого проекта.")
+        status = getattr(last_error, "status_code", None)
         raise AIError(f"Не удалось выполнить запрос Gemini (HTTP {status or 'нет ответа'}). Попробуй ещё раз.")
 
     try:
