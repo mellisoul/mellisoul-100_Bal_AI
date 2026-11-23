@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import re
@@ -9,6 +11,7 @@ from pathlib import Path
 import fitz
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from ai_service import (
@@ -569,6 +572,127 @@ def get_stats():
             round(tests["average"], 1) if tests["average"] is not None else None
         ),
     }
+
+
+EXPORT_FIELDS = [
+    ("id", "ID"),
+    ("material", "Материал"),
+    ("topic", "Тема"),
+    ("level", "Уровень"),
+    ("level_name", "Название уровня"),
+    ("question_type", "Тип"),
+    ("question", "Вопрос"),
+    ("option_a", "Вариант A"),
+    ("option_b", "Вариант B"),
+    ("option_c", "Вариант C"),
+    ("option_d", "Вариант D"),
+    ("correct_answer", "Правильный ответ"),
+    ("explanation", "Объяснение"),
+    ("page", "Страница"),
+    ("quality", "Проверка AI"),
+    ("quality_note", "Замечание AI"),
+]
+
+LEVEL_TITLES = {
+    1: "Очень лёгкий",
+    2: "Лёгкий",
+    3: "Средний",
+    4: "Сложный",
+    5: "Очень сложный",
+}
+
+QUALITY_TITLES = {"ok": "пройдена", "warn": "есть замечания", "unchecked": "не проверялся"}
+
+
+def export_rows(material_id: int | None) -> list[dict]:
+    query = """
+        SELECT q.id, q.material_id, q.question, q.options, q.correct_answer,
+               q.explanation, q.topic, q.question_type, q.level, q.page,
+               q.quality, q.quality_note, m.title AS material
+        FROM questions q JOIN materials m ON m.id = q.material_id
+    """
+    params: list = []
+
+    if material_id is not None:
+        query += " WHERE q.material_id = ?"
+        params.append(material_id)
+
+    with get_connection() as conn:
+        if material_id is not None:
+            get_material_or_404(conn, material_id)
+        rows = conn.execute(query + " ORDER BY m.id, q.level, q.id", params).fetchall()
+
+    result = []
+
+    for row in rows:
+        item = question_to_dict(row)
+        options = (item["options"] + ["", "", "", ""])[:4]
+        result.append(
+            {
+                "id": item["id"],
+                "material": row["material"],
+                "topic": item["topic"],
+                "level": item["level"],
+                "level_name": LEVEL_TITLES.get(item["level"], ""),
+                "question_type": "тест" if item["question_type"] == "test" else "открытый",
+                "question": item["question"],
+                "option_a": options[0],
+                "option_b": options[1],
+                "option_c": options[2],
+                "option_d": options[3],
+                "correct_answer": item["correct_answer"],
+                "explanation": item["explanation"],
+                "page": item["page"] or "",
+                "quality": QUALITY_TITLES.get(item["quality"], item["quality"]),
+                "quality_note": item["quality_note"] or "",
+            }
+        )
+
+    return result
+
+
+def export_response(rows: list[dict], format: str, name: str) -> Response:
+    if format == "json":
+        body = json.dumps(
+            {"count": len(rows), "questions": rows},
+            ensure_ascii=False,
+            indent=2,
+        )
+        return Response(
+            body,
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}.json"'},
+        )
+
+    if format != "csv":
+        raise HTTPException(status_code=400, detail="Формат экспорта: csv или json.")
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow([title for _, title in EXPORT_FIELDS])
+
+    for row in rows:
+        writer.writerow([row[key] for key, _ in EXPORT_FIELDS])
+
+    return Response(
+        "\ufeff" + buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'},
+    )
+
+
+@app.get("/api/export")
+def export_all(format: str = "csv"):
+    return export_response(export_rows(None), format, "100_bal_ai_questions")
+
+
+@app.get("/api/materials/{material_id}/export")
+def export_material(material_id: int, format: str = "csv"):
+    return export_response(
+        export_rows(material_id),
+        format,
+        f"100_bal_ai_material_{material_id}",
+    )
 
 
 if FRONTEND_DIR.exists():

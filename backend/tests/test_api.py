@@ -214,3 +214,17 @@ def test_transient_gemini_failure_retries(monkeypatch):
     monkeypatch.setattr(ai_service, "get_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
     assert ai_service.ask_json("JSON", "Test") == {"ok": True}
     assert len(calls) == 3
+
+
+def test_export_csv_and_json(client):
+    mid = upload(client)
+    client.post(f"/api/materials/{mid}/generate", json={"count": 5, "level": 0, "question_type": "mixed", "verify": False})
+    r = client.get(f"/api/materials/{mid}/export?format=csv")
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
+    text = r.content.decode("utf-8-sig")
+    lines = [line for line in text.splitlines() if line.strip()]
+    assert lines[0].startswith("ID;Материал;Тема;Уровень")
+    j = client.get("/api/export?format=json").json()
+    assert j["count"] == 5 and {q["level"] for q in j["questions"]} == {1, 2, 3, 4, 5}
+    assert client.get("/api/export?format=xml").status_code == 400
+    assert client.get("/api/materials/999/export").status_code == 404

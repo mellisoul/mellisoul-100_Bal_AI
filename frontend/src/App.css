@@ -1218,3 +1218,39 @@ p {
     font-size: 21px;
   }
 }
+
+.results-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+.export {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--pencil);
+}
+
+.export span {
+  margin-right: 2px;
+}
+
+.export .btn {
+  text-decoration: none;
+}
+
+.sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.sheet-head .sheet-title {
+  margin-bottom: 0;
+}

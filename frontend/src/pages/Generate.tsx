@@ -247,6 +247,18 @@ export default function Generate({
               {material?.title ?? 'Материал'}
               <span>{questions.length} вопросов</span>
             </h2>
+            <div className="results-tools">
+            {questions.length > 0 && selectedId !== null && (
+              <div className="export">
+                <span>Скачать</span>
+                <a className="btn btn-ghost btn-small" href={`/api/materials/${selectedId}/export?format=csv`} download>
+                  CSV
+                </a>
+                <a className="btn btn-ghost btn-small" href={`/api/materials/${selectedId}/export?format=json`} download>
+                  JSON
+                </a>
+              </div>
+            )}
             <div className="filter" role="group" aria-label="Фильтр по уровню">
               <button
                 className={filter === 0 ? 'is-active' : ''}
@@ -267,6 +279,7 @@ export default function Generate({
                   <small>{countByLevel(value)}</small>
                 </button>
               ))}
+            </div>
             </div>
           </div>
 

@@ -92,7 +92,20 @@ function App() {
             </div>
 
             <section className="sheet">
-              <h2 className="sheet-title">Банк вопросов по уровням</h2>
+              <div className="sheet-head">
+                <h2 className="sheet-title">Банк вопросов по уровням</h2>
+                {(stats?.questions ?? 0) > 0 && (
+                  <div className="export">
+                    <span>Скачать все вопросы</span>
+                    <a className="btn btn-ghost btn-small" href="/api/export?format=csv" download>
+                      CSV
+                    </a>
+                    <a className="btn btn-ghost btn-small" href="/api/export?format=json" download>
+                      JSON
+                    </a>
+                  </div>
+                )}
+              </div>
               <div className="level-table">
                 {[1, 2, 3, 4, 5].map((level) => {
                   const value = stats?.by_level[String(level)] ?? 0
