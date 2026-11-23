@@ -12,6 +12,8 @@ export default function Materials({ materials, onChanged, onGenerate }: Props) {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [dragging, setDragging] = useState(false)
 
   const detectTopics = async (id: number) => {
     setBusyId(id)
@@ -29,18 +31,18 @@ export default function Materials({ materials, onChanged, onGenerate }: Props) {
 
   const upload = async (file: File) => {
     setError('')
-    setStatus('Загружаю и читаю документ…')
+    setStatus('')
+    setUploading(true)
 
     try {
       await api.upload(file)
       await onChanged()
+      setStatus(`«${file.name}» загружен. Теперь найди в нём темы.`)
     } catch (e) {
       setError((e as Error).message)
-      setStatus('')
-      return
+    } finally {
+      setUploading(false)
     }
-
-    setStatus('Материал загружен. Нажми «Определить темы», чтобы обработать его с помощью AI.')
   }
 
   const remove = async (material: Material) => {
@@ -55,15 +57,30 @@ export default function Materials({ materials, onChanged, onGenerate }: Props) {
   }
 
   return (
-    <section className="content-card">
-      <span className="eyebrow">ТВОЯ БИБЛИОТЕКА</span>
-      <h2>Мои материалы</h2>
-      <p className="muted">Загрузи PDF или TXT — AI найдёт темы, и можно создавать вопросы.</p>
+    <>
+      <header className="page-head">
+        <h1>Материалы</h1>
+        <p>Учебники и конспекты, из которых AI составляет вопросы.</p>
+      </header>
 
-      <div className="upload-box">
-        <div className="upload-icon">↑</div>
-        <h3>Добавь учебный материал</h3>
-        <p>PDF с текстом или TXT, до 10 МБ.</p>
+      <div
+        className={`dropzone ${dragging ? 'is-dragging' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          const file = e.dataTransfer.files?.[0]
+          if (file) upload(file)
+        }}
+      >
+        <div className="dropzone-text">
+          <b>{uploading ? 'Читаю документ…' : 'Перетащи файл сюда'}</b>
+          <span>PDF с текстом или TXT, до 10 МБ</span>
+        </div>
         <input
           ref={inputRef}
           type="file"
@@ -75,59 +92,78 @@ export default function Materials({ materials, onChanged, onGenerate }: Props) {
             e.target.value = ''
           }}
         />
-        <button className="button button-primary" onClick={() => inputRef.current?.click()}>
+        <button
+          className="btn btn-primary"
+          disabled={uploading}
+          onClick={() => inputRef.current?.click()}
+        >
           Выбрать файл
         </button>
       </div>
 
-      {status && <div className="notice">{status}</div>}
-      {error && <div className="q-error">{error}</div>}
+      {status && <div className="alert">{status}</div>}
+      {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="material-list">
-        {materials.length === 0 && <p className="muted">Пока нет материалов.</p>}
+      {materials.length === 0 ? (
+        <p className="empty">Здесь появятся загруженные учебники.</p>
+      ) : (
+        <ul className="shelf">
+          {materials.map((material) => {
+            const hasTopics = !!material.topics && material.topics.length > 0
 
-        {materials.map((material) => (
-          <article className="material-item" key={material.id}>
-            <div className="material-head">
-              <div>
-                <strong>{material.title}</strong>
-                <small>
-                  {material.file_type.toUpperCase()} · вопросов: {material.question_count}
-                </small>
-              </div>
-              <div className="q-actions">
-                <button
-                  className="button button-primary"
-                  onClick={() => onGenerate(material.id)}
-                >
-                  Создать вопросы
-                </button>
-                <button className="button button-danger" onClick={() => remove(material)}>
-                  Удалить
-                </button>
-              </div>
-            </div>
+            return (
+              <li className="book" key={material.id}>
+                <div className="book-spine" data-type={material.file_type.toUpperCase()} />
+                <div className="book-body">
+                  <div className="book-head">
+                    <div>
+                      <h2>{material.title}</h2>
+                      <p>
+                        {material.file_type.toUpperCase()}, вопросов: {material.question_count}
+                      </p>
+                    </div>
+                    <div className="row-actions">
+                      {hasTopics ? (
+                        <button className="btn btn-primary" onClick={() => onGenerate(material.id)}>
+                          Создать вопросы
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            className="btn btn-primary"
+                            disabled={busyId === material.id}
+                            onClick={() => detectTopics(material.id)}
+                          >
+                            {busyId === material.id ? 'Ищу темы…' : 'Найти темы'}
+                          </button>
+                          <button className="btn btn-ghost" onClick={() => onGenerate(material.id)}>
+                            Создать вопросы
+                          </button>
+                        </>
+                      )}
+                      <button className="btn btn-quiet" onClick={() => remove(material)}>
+                        Удалить
+                      </button>
+                    </div>
+                  </div>
 
-            {material.topics && material.topics.length > 0 ? (
-              <div className="chips">
-                {material.topics.map((topic) => (
-                  <span className="chip" key={topic.name}>
-                    {topic.name}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <button
-                className="button button-light"
-                disabled={busyId === material.id}
-                onClick={() => detectTopics(material.id)}
-              >
-                {busyId === material.id ? 'Ищу темы…' : 'Определить темы'}
-              </button>
-            )}
-          </article>
-        ))}
-      </div>
-    </section>
+                  {hasTopics ? (
+                    <div className="topics">
+                      {material.topics!.map((topic) => (
+                        <span className="topic" key={topic.name}>
+                          {topic.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="book-hint">Темы ещё не найдены — без них вопросы строятся по всему тексту.</p>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </>
   )
 }

@@ -10,6 +10,14 @@ type Props = {
   goToMaterials: () => void
 }
 
+const counts = [5, 10, 15, 20, 30]
+
+const types: { id: GenerateParams['question_type']; title: string }[] = [
+  { id: 'mixed', title: 'Смешанные' },
+  { id: 'test', title: 'Тесты' },
+  { id: 'open', title: 'Открытые' },
+]
+
 export default function Generate({
   materials,
   selectedId,
@@ -31,9 +39,16 @@ export default function Generate({
   const material = materials.find((item) => item.id === selectedId) ?? null
 
   useEffect(() => {
+    if (selectedId === null && materials.length > 0) {
+      setSelectedId(materials[0].id)
+    }
+  }, [selectedId, materials, setSelectedId])
+
+  useEffect(() => {
     setTopic('')
     setInfo('')
     setError('')
+    setFilter(0)
 
     if (selectedId === null) {
       setQuestions([])
@@ -62,9 +77,10 @@ export default function Generate({
         verify,
       })
       setQuestions((current) => [...result.questions, ...current])
+      setFilter(0)
       setInfo(
-        `Создано вопросов: ${result.questions.length}` +
-          (result.skipped_duplicates ? `, отброшено повторов: ${result.skipped_duplicates}` : ''),
+        `Готово: ${result.questions.length} новых вопросов` +
+          (result.skipped_duplicates ? `, повторов отброшено: ${result.skipped_duplicates}` : ''),
       )
       await onChanged()
     } catch (e) {
@@ -75,168 +91,212 @@ export default function Generate({
   }
 
   const visible = filter ? questions.filter((q) => q.level === filter) : questions
+  const countByLevel = (value: number) => questions.filter((q) => q.level === value).length
 
   if (materials.length === 0) {
     return (
-      <section className="content-card">
-        <span className="eyebrow">AI QUESTION STUDIO</span>
-        <h2>Создай свой набор вопросов</h2>
-        <p className="muted">Сначала загрузи учебный материал.</p>
-        <button className="button button-primary" onClick={goToMaterials}>
-          Загрузить материал →
+      <>
+        <header className="page-head">
+          <h1>Вопросы</h1>
+          <p>Чтобы составить вопросы, сначала загрузи учебник.</p>
+        </header>
+        <button className="btn btn-primary btn-large" onClick={goToMaterials}>
+          Загрузить учебник
         </button>
-      </section>
+      </>
     )
   }
 
   return (
     <>
-      <section className="content-card">
-        <span className="eyebrow">AI QUESTION STUDIO</span>
-        <h2>Создай свой набор вопросов</h2>
-        <p className="muted">AI составит вопросы строго по выбранному материалу и теме.</p>
+      <header className="page-head">
+        <h1>Вопросы</h1>
+        <p>AI составляет вопросы только по тексту выбранного материала.</p>
+      </header>
 
-        <div className="form-grid">
-          <label>
-            Материал
+      <div className="studio">
+        <section className="sheet settings">
+          <div className="field">
+            <label htmlFor="material">Материал</label>
             <select
+              id="material"
               value={selectedId ?? ''}
               onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">Выбери материал</option>
               {materials.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.title}
                 </option>
               ))}
             </select>
-          </label>
+          </div>
 
-          <label>
-            Тема
+          <div className="field">
+            <label htmlFor="topic">Тема</label>
             <input
-              list="topic-options"
+              id="topic"
               value={topic}
-              placeholder="Весь материал или своя тема"
+              placeholder="Весь материал"
               onChange={(e) => setTopic(e.target.value)}
             />
-            <datalist id="topic-options">
-              {material?.topics?.map((item) => (
-                <option key={item.name} value={item.name} />
-              ))}
-            </datalist>
-          </label>
+            {material?.topics && material.topics.length > 0 && (
+              <div className="topics">
+                {material.topics.map((item) => (
+                  <button
+                    key={item.name}
+                    className={`topic topic-button ${topic === item.name ? 'is-active' : ''}`}
+                    aria-pressed={topic === item.name}
+                    onClick={() => setTopic(topic === item.name ? '' : item.name)}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-          <label>
-            Количество вопросов
-            <select value={count} onChange={(e) => setCount(Number(e.target.value))}>
-              {[5, 10, 15, 20, 30].map((value) => (
-                <option key={value} value={value}>
-                  {value} вопросов
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Уровень сложности
-            <select value={level} onChange={(e) => setLevel(Number(e.target.value))}>
-              <option value={0}>Все 5 уровней</option>
-              {[1, 2, 3, 4, 5].map((value) => (
-                <option key={value} value={value}>
-                  {value} — {LEVEL_NAMES[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Формат
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as GenerateParams['question_type'])}
-            >
-              <option value="test">Тест с вариантами ответов</option>
-              <option value="open">Открытые вопросы</option>
-              <option value="mixed">Смешанный</option>
-            </select>
-          </label>
-
-          <label className="q-check">
-            <input
-              type="checkbox"
-              checked={verify}
-              onChange={(e) => setVerify(e.target.checked)}
-            />
-            Проверить качество вопросов (дополнительный запрос к AI)
-          </label>
-        </div>
-
-        {material?.topics && material.topics.length > 0 && (
-          <div className="chips">
-            {material.topics.map((item) => (
+          <fieldset className="field">
+            <legend>Уровень сложности</legend>
+            <div className="level-picker">
               <button
-                key={item.name}
-                className={`chip chip-button ${topic === item.name ? 'active' : ''}`}
-                onClick={() => setTopic(topic === item.name ? '' : item.name)}
+                className={level === 0 ? 'is-active' : ''}
+                aria-pressed={level === 0}
+                onClick={() => setLevel(0)}
               >
-                {item.name}
+                <span className="level-picker-dots">
+                  {[1, 2, 3, 4, 5].map((v) => (
+                    <i key={v} className="filled" />
+                  ))}
+                </span>
+                Все уровни поровну
               </button>
-            ))}
-          </div>
-        )}
-
-        {busy && <div className="notice">AI создаёт вопросы, это может занять до минуты…</div>}
-        {info && !busy && <div className="notice">{info}</div>}
-        {error && <div className="q-error">{error}</div>}
-
-        <button
-          className="button button-primary"
-          onClick={generate}
-          disabled={busy || selectedId === null}
-        >
-          {busy ? 'Генерирую…' : '✦ Создать вопросы'}
-        </button>
-      </section>
-
-      {selectedId !== null && (
-        <section className="content-card">
-          <div className="section-heading">
-            <div>
-              <h3>Вопросы по материалу ({questions.length})</h3>
-              <p className="muted">Можно изменить или удалить неудачные вопросы.</p>
-            </div>
-            <select value={filter} onChange={(e) => setFilter(Number(e.target.value))}>
-              <option value={0}>Все уровни</option>
               {[1, 2, 3, 4, 5].map((value) => (
-                <option key={value} value={value}>
-                  Уровень {value}
-                </option>
+                <button
+                  key={value}
+                  className={level === value ? 'is-active' : ''}
+                  aria-pressed={level === value}
+                  onClick={() => setLevel(value)}
+                >
+                  <span className="level-picker-dots">
+                    {[1, 2, 3, 4, 5].map((v) => (
+                      <i key={v} className={v <= value ? 'filled' : ''} />
+                    ))}
+                  </span>
+                  {LEVEL_NAMES[value]}
+                </button>
               ))}
-            </select>
-          </div>
+            </div>
+          </fieldset>
 
-          {visible.length === 0 && <p className="muted">Вопросов пока нет.</p>}
+          <fieldset className="field">
+            <legend>Формат</legend>
+            <div className="segmented">
+              {types.map((item) => (
+                <button
+                  key={item.id}
+                  className={type === item.id ? 'is-active' : ''}
+                  aria-pressed={type === item.id}
+                  onClick={() => setType(item.id)}
+                >
+                  {item.title}
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
-          <div className="q-list">
-            {visible.map((question) => (
-              <QuestionCard
-                key={question.id}
-                question={question}
-                onChange={(updated) =>
-                  setQuestions((current) =>
-                    current.map((item) => (item.id === updated.id ? updated : item)),
-                  )
-                }
-                onDelete={(id) => {
-                  setQuestions((current) => current.filter((item) => item.id !== id))
-                  onChanged()
-                }}
-              />
-            ))}
-          </div>
+          <fieldset className="field">
+            <legend>Сколько вопросов</legend>
+            <div className="segmented">
+              {counts.map((value) => (
+                <button
+                  key={value}
+                  className={count === value ? 'is-active' : ''}
+                  aria-pressed={count === value}
+                  onClick={() => setCount(value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <label className="check">
+            <input type="checkbox" checked={verify} onChange={(e) => setVerify(e.target.checked)} />
+            <span>
+              Проверить качество
+              <small>Ещё один запрос к AI: тема, правильность ответа, уровень</small>
+            </span>
+          </label>
+
+          <button
+            className="btn btn-primary btn-large btn-block"
+            onClick={generate}
+            disabled={busy || selectedId === null}
+          >
+            {busy ? 'AI составляет вопросы…' : `Создать ${count} вопросов`}
+          </button>
+
+          {busy && <p className="hint">Обычно это занимает до минуты.</p>}
+          {info && !busy && <div className="alert alert-ok">{info}</div>}
+          {error && <div className="alert alert-error">{error}</div>}
         </section>
-      )}
+
+        <section className="results">
+          <div className="results-head">
+            <h2>
+              {material?.title ?? 'Материал'}
+              <span>{questions.length} вопросов</span>
+            </h2>
+            <div className="filter" role="group" aria-label="Фильтр по уровню">
+              <button
+                className={filter === 0 ? 'is-active' : ''}
+                aria-pressed={filter === 0}
+                onClick={() => setFilter(0)}
+              >
+                Все
+              </button>
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  className={filter === value ? 'is-active' : ''}
+                  aria-pressed={filter === value}
+                  title={LEVEL_NAMES[value]}
+                  onClick={() => setFilter(value)}
+                >
+                  {value}
+                  <small>{countByLevel(value)}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {visible.length === 0 ? (
+            <p className="empty">
+              {questions.length === 0
+                ? 'Вопросов пока нет. Настрой параметры слева и нажми «Создать».'
+                : 'На этом уровне вопросов нет.'}
+            </p>
+          ) : (
+            <div className="question-list">
+              {visible.map((question) => (
+                <QuestionCard
+                  key={question.id}
+                  question={question}
+                  onChange={(updated) =>
+                    setQuestions((current) =>
+                      current.map((item) => (item.id === updated.id ? updated : item)),
+                    )
+                  }
+                  onDelete={(id) => {
+                    setQuestions((current) => current.filter((item) => item.id !== id))
+                    onChanged()
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </>
   )
 }

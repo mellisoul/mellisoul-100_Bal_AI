@@ -1,9 +1,29 @@
 :root {
-  font-family: 'DM Sans', sans-serif;
+  --paper: #f3f5f8;
+  --sheet: #ffffff;
+  --ink: #1a2240;
+  --pencil: #646b82;
+  --line: #d9dee8;
+  --line-soft: #e8ebf1;
+  --blue: #2747d6;
+  --blue-dark: #1b34a8;
+  --blue-wash: #e9edfc;
+  --marker: #ffd84d;
+  --marker-soft: #fff3c2;
+  --red: #c8372d;
+  --red-wash: #fbeceb;
+  --green: #1f8a5b;
+  --green-wash: #e4f4ec;
+  --display: 'Unbounded', 'Arial Black', sans-serif;
+  --body: 'Onest', 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -14,10 +34,27 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--paper);
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

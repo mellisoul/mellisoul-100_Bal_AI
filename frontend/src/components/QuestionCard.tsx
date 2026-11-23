@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, LEVEL_NAMES, type Question } from '../api'
+import LevelDots from './LevelDots'
 
 type Props = {
   question: Question
@@ -56,63 +57,66 @@ export default function QuestionCard({ question, onChange, onDelete }: Props) {
     const options = [...draft.options]
     const wasCorrect = options[index] === draft.correct_answer
     options[index] = value
-    setDraft({
-      ...draft,
-      options,
-      correct_answer: wasCorrect ? value : draft.correct_answer,
-    })
+    setDraft({ ...draft, options, correct_answer: wasCorrect ? value : draft.correct_answer })
   }
 
   if (editing) {
     return (
-      <article className="q-card q-editing">
-        <label className="q-field">
-          Вопрос
+      <article className="card card-editing">
+        <div className="field">
+          <label htmlFor={`q-${question.id}`}>Вопрос</label>
           <textarea
+            id={`q-${question.id}`}
             rows={3}
             value={draft.question}
             onChange={(e) => setDraft({ ...draft, question: e.target.value })}
           />
-        </label>
+        </div>
 
         {draft.question_type === 'test' ? (
-          <div className="q-field">
-            Варианты (отметь правильный)
-            {draft.options.map((option, index) => (
-              <div className="q-option-edit" key={index}>
-                <input
-                  type="radio"
-                  name={`correct-${question.id}`}
-                  checked={option === draft.correct_answer}
-                  onChange={() => setDraft({ ...draft, correct_answer: option })}
-                />
-                <input value={option} onChange={(e) => setOption(index, e.target.value)} />
-              </div>
-            ))}
-          </div>
+          <fieldset className="field">
+            <legend>Варианты — отметь правильный</legend>
+            <div className="option-edit-list">
+              {draft.options.map((option, index) => (
+                <label className="option-edit" key={index}>
+                  <input
+                    type="radio"
+                    name={`correct-${question.id}`}
+                    checked={option === draft.correct_answer}
+                    onChange={() => setDraft({ ...draft, correct_answer: option })}
+                  />
+                  <span className="bubble">{'ABCD'[index]}</span>
+                  <input value={option} onChange={(e) => setOption(index, e.target.value)} />
+                </label>
+              ))}
+            </div>
+          </fieldset>
         ) : (
-          <label className="q-field">
-            Правильный ответ
+          <div className="field">
+            <label htmlFor={`a-${question.id}`}>Правильный ответ</label>
             <textarea
+              id={`a-${question.id}`}
               rows={4}
               value={draft.correct_answer}
               onChange={(e) => setDraft({ ...draft, correct_answer: e.target.value })}
             />
-          </label>
+          </div>
         )}
 
-        <label className="q-field">
-          Объяснение
+        <div className="field">
+          <label htmlFor={`e-${question.id}`}>Объяснение</label>
           <textarea
+            id={`e-${question.id}`}
             rows={2}
             value={draft.explanation}
             onChange={(e) => setDraft({ ...draft, explanation: e.target.value })}
           />
-        </label>
+        </div>
 
-        <label className="q-field">
-          Уровень
+        <div className="field">
+          <label htmlFor={`l-${question.id}`}>Уровень</label>
           <select
+            id={`l-${question.id}`}
             value={draft.level}
             onChange={(e) => setDraft({ ...draft, level: Number(e.target.value) })}
           >
@@ -122,15 +126,15 @@ export default function QuestionCard({ question, onChange, onDelete }: Props) {
               </option>
             ))}
           </select>
-        </label>
+        </div>
 
-        {error && <div className="q-error">{error}</div>}
+        {error && <div className="alert alert-error">{error}</div>}
 
-        <div className="q-actions">
-          <button className="button button-primary" onClick={save} disabled={busy}>
+        <div className="row-actions">
+          <button className="btn btn-primary" onClick={save} disabled={busy}>
             {busy ? 'Сохраняю…' : 'Сохранить'}
           </button>
-          <button className="button button-light" onClick={() => setEditing(false)}>
+          <button className="btn btn-ghost" onClick={() => setEditing(false)}>
             Отмена
           </button>
         </div>
@@ -139,69 +143,61 @@ export default function QuestionCard({ question, onChange, onDelete }: Props) {
   }
 
   return (
-    <article className="q-card">
-      <div className="q-meta">
-        <span className={`q-badge level-${question.level}`}>
-          {question.level} · {LEVEL_NAMES[question.level]}
-        </span>
-        <span className="q-badge neutral">
-          {question.question_type === 'test' ? 'Тест' : 'Открытый'}
-        </span>
-        <span className="q-badge neutral">{question.topic}</span>
-        {question.page && <span className="q-badge neutral">стр. {question.page}</span>}
-        {question.quality === 'ok' && <span className="q-badge ok">✓ проверен</span>}
-        {question.quality === 'warn' && (
-          <span className="q-badge warn" title={question.quality_note}>
-            ⚠ проверь
-          </span>
-        )}
+    <article className={`card ${question.quality === 'warn' ? 'card-warn' : ''}`}>
+      <div className="card-meta">
+        <LevelDots level={question.level} />
+        <span>{question.question_type === 'test' ? 'Тест' : 'Открытый'}</span>
+        {question.topic && <span>{question.topic}</span>}
+        {question.page && <span>стр. {question.page}</span>}
+        {question.quality === 'ok' && <span className="mark mark-ok">Проверен AI</span>}
+        {question.quality === 'warn' && <span className="mark mark-warn">Проверь вручную</span>}
       </div>
 
-      <p className="q-text">{question.question}</p>
+      <p className="card-question">{question.question}</p>
 
       {question.question_type === 'test' && (
-        <ul className="q-options">
+        <ul className="bubbles">
           {question.options.map((option, index) => (
             <li
               key={index}
-              className={revealed && option === question.correct_answer ? 'correct' : ''}
+              className={revealed && option === question.correct_answer ? 'is-correct' : ''}
             >
-              <b>{'ABCD'[index]}</b>
-              {option}
+              <span className="bubble">{'ABCD'[index]}</span>
+              <span>{option}</span>
             </li>
           ))}
         </ul>
       )}
 
       {question.quality === 'warn' && question.quality_note && (
-        <div className="q-note warn">{question.quality_note}</div>
+        <p className="card-note">{question.quality_note}</p>
       )}
 
       {revealed && (
-        <div className="q-answer">
+        <div className="answer">
           {question.question_type === 'open' && (
             <p>
-              <strong>Ответ:</strong> {question.correct_answer}
+              <b>Ответ.</b> {question.correct_answer}
             </p>
           )}
           {question.explanation && (
             <p>
-              <strong>Объяснение:</strong> {question.explanation}
+              <b>Почему.</b> {question.explanation}
             </p>
           )}
         </div>
       )}
 
-      {error && <div className="q-error">{error}</div>}
+      {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="q-actions">
-        <button className="button button-light" onClick={() => setRevealed(!revealed)}>
+      <div className="card-actions">
+        <button className="btn btn-ghost btn-small" onClick={() => setRevealed(!revealed)}>
           {revealed ? 'Скрыть ответ' : 'Показать ответ'}
         </button>
-        <button className="button button-light" onClick={startEdit}>
+        <button className="btn btn-quiet btn-small" onClick={startEdit}>
           Изменить
         </button>
-        <button className="button button-danger" onClick={remove}>
+        <button className="btn btn-quiet btn-small btn-danger" onClick={remove}>
           Удалить
         </button>
       </div>
