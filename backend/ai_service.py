@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 import re
@@ -86,41 +87,73 @@ def get_client():
                   base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
 
 
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+FALLBACK_STATUSES = {404, 429, 500, 502, 503, 504}
+logger = logging.getLogger("ai_service")
+
+
+def model_chain() -> List[str]:
+    main = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    extra = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3.1-flash-lite,gemini-2.5-flash")
+    models = [main] + [m.strip() for m in extra.split(",") if m.strip()]
+    return list(dict.fromkeys(models))
+
+
+def call_model(client, model: str, system: str, user: str):
+    return client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.4,
+    )
+
+
 def ask_json(system: str, user: str) -> dict:
     client = get_client()
-    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    last_error: Exception | None = None
+    response = None
 
-    try:
+    for model in model_chain():
         for attempt in range(3):
             try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.4,
-                )
+                response = call_model(client, model, system, user)
                 break
             except Exception as error:
-                if getattr(error, "status_code", None) not in {500, 502, 503, 504} or attempt == 2:
-                    raise
-                time.sleep(attempt + 1)
-        data = json.loads(response.choices[0].message.content or "{}")
-    except json.JSONDecodeError:
-        raise AIError("Модель вернула некорректный JSON. Попробуй ещё раз.")
-    except Exception as error:
-        if getattr(error, "status_code", None) == 429:
-            raise AIError("Лимит Gemini исчерпан. Попробуй позже или проверь бесплатную квоту в Google AI Studio.")
-        status = getattr(error, "status_code", None)
+                last_error = error
+                status = getattr(error, "status_code", None)
+                logger.warning("Gemini %s attempt %s failed: HTTP %s %s", model, attempt + 1, status, error)
+
+                if status not in RETRY_STATUSES or attempt == 2:
+                    break
+
+                time.sleep(2 ** (attempt + 1) + random.random())
+
+        if response is not None:
+            break
+
+        if getattr(last_error, "status_code", None) not in FALLBACK_STATUSES:
+            break
+
+    if response is None:
+        status = getattr(last_error, "status_code", None)
+
+        if status == 429:
+            raise AIError("Лимит Gemini исчерпан. Подожди минуту и попробуй снова или проверь квоту в Google AI Studio.")
         if status in {500, 502, 503, 504}:
-            raise AIError("Gemini временно недоступен. Попробуй повторить генерацию позже.") from error
+            raise AIError("Gemini сейчас перегружен. Подожди минуту и попробуй ещё раз.")
         if status in {401, 403}:
-            raise AIError("Gemini отклонил доступ. Проверь ключ и разрешения проекта Google AI Studio.") from error
+            raise AIError("Gemini отклонил доступ. Проверь ключ и разрешения проекта Google AI Studio.")
         if status == 404:
-            raise AIError("Выбранная модель Gemini недоступна для этого проекта.") from error
-        raise AIError(f"Не удалось выполнить запрос Gemini (HTTP {status or 'нет ответа'}). Попробуй ещё раз.") from error
+            raise AIError("Выбранная модель Gemini недоступна для этого проекта.")
+        raise AIError(f"Не удалось выполнить запрос Gemini (HTTP {status or 'нет ответа'}). Попробуй ещё раз.")
+
+    try:
+        data = json.loads(response.choices[0].message.content or "{}")
+    except (json.JSONDecodeError, AttributeError, IndexError):
+        raise AIError("Модель вернула некорректный JSON. Попробуй ещё раз.")
 
     if not isinstance(data, dict):
         raise AIError("Модель вернула неожиданный формат ответа.")
@@ -457,7 +490,7 @@ def generate_questions(
     known = list(existing or [])
     plan = level_plan(count, level)
 
-    with ThreadPoolExecutor(max_workers=len(plan)) as pool:
+    with ThreadPoolExecutor(max_workers=min(2, len(plan))) as pool:
         futures = [
             pool.submit(
                 generate_for_level,
